@@ -1,0 +1,196 @@
+CREATE PROCEDURE sp_OriginationDetails
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Drop the table if it exists
+    IF OBJECT_ID('DatabaseX.dbo.Originations_Details', 'U') IS NOT NULL
+        DROP TABLE DatabaseX.dbo.Originations_Details;
+
+    -- Create the table with renamed columns
+    CREATE TABLE DatabaseX.dbo.Originations_Details (
+        [AgreementSignedDate]       DATE,
+        [ClientName]                NVARCHAR(255),
+        [ContractCategory]          NVARCHAR(50),
+        [ClientRegion]              NVARCHAR(50),
+        [FundingProvider]           NVARCHAR(255),
+        [ThirdPartyName]           NVARCHAR(255),
+        [ThirdPartyFee]            DECIMAL(18,2),
+        [AssetCost]                 DECIMAL(18,2),
+        [Sector]                    NVARCHAR(255),
+        [SectorCategoryInternal]    NVARCHAR(255),
+        [SectorCategoryExternal]    NVARCHAR(255),
+        [SectorCode]                NVARCHAR(50),
+        [AssetType]                 NVARCHAR(255),
+        [AssetCategory]             NVARCHAR(255),
+        [AssetDescription]          NVARCHAR(255),
+        [TermLength]                INT,
+        [ResidualValue]             DECIMAL(18,2),
+        [TimeInBusiness]            NVARCHAR(50),
+        [AverageScore]              DECIMAL(10,2),
+        [IsCorporateOnly]           NVARCHAR(50),
+        [CreditClassification]      NVARCHAR(50),
+        [CalculatedClassification]  NVARCHAR(50),
+        [UnderwriterName]           NVARCHAR(255),
+        [SalesRepName]              NVARCHAR(255),
+        [PaymentAmount]             DECIMAL(18,2),
+        [PaymentCycle]              NVARCHAR(50),
+        [ResidualPaymentAmount]     DECIMAL(18,2),
+        [AssetBookValue]            DECIMAL(18,2),
+        [ARBalance]                 DECIMAL(18,2),
+        [EarliestRentDue]           DATE,
+        [ImplicitInterestRate]      DECIMAL(10,6),
+        [GuaranteeDeposit]          DECIMAL(18,2),
+        [NetAssetInvestment]        DECIMAL(18,2),
+        [AgreementMaturityDate]     DATE,
+        [AgreementEndDate]          DATE,
+        [InstallmentType]           NVARCHAR(50),
+        [NextInstallmentDate]       DATE,
+        [ExternalRiskScore]         DECIMAL(10,2),
+        [GrossLoss]                 DECIMAL(18,2),
+        [NetLoss]                   DECIMAL(18,2),
+        [ComparableGrossLoss]       DECIMAL(18,2),
+        [ComparableNetLoss]         DECIMAL(18,2),
+        [DataSource]                NVARCHAR(255),
+        [WeightedYieldData]         DECIMAL(18,2),
+        [MarketSegment]             NVARCHAR(50),
+        [AgreementID]               NVARCHAR(50),
+        [KeyVendor]                 NVARCHAR(255)
+    );
+
+    WITH open_invoice AS (
+        SELECT 
+            b.HistLeaseNum, 
+            SUM(b.histamount) AS histamount
+        FROM OpenInvoiceHistory b
+        WHERE b.histcompanynum IN ('01', '04')
+          AND b.histtrancode IN ('CAPRED', 'CAPREDS')
+          AND b.histregistertype IN ('CR', 'RC')
+        GROUP BY b.histleaseNum
+    )
+    INSERT INTO DatabaseX.dbo.Originations_Details (
+        [AgreementSignedDate],
+        [ClientName],
+        [ContractCategory],
+        [ClientRegion],
+        [FundingProvider],
+        [ThirdPartyName],
+        [ThirdPartyFee],
+        [AssetCost],
+        [Sector],
+        [SectorCategoryInternal],
+        [SectorCategoryExternal],
+        [SectorCode],
+        [AssetType],
+        [AssetCategory],
+        [AssetDescription],
+        [TermLength],
+        [ResidualValue],
+        [TimeInBusiness],
+        [AverageScore],
+        [IsCorporateOnly],
+        [CreditClassification],
+        [CalculatedClassification],
+        [UnderwriterName],
+        [SalesRepName],
+        [PaymentAmount],
+        [PaymentCycle],
+        [ResidualPaymentAmount],
+        [AssetBookValue],
+        [ARBalance],
+        [EarliestRentDue],
+        [ImplicitInterestRate],
+        [GuaranteeDeposit],
+        [NetAssetInvestment],
+        [AgreementMaturityDate],
+        [AgreementEndDate],
+        [InstallmentType],
+        [NextInstallmentDate],
+        [ExternalRiskScore],
+        [GrossLoss],
+        [NetLoss],
+        [ComparableGrossLoss],
+        [ComparableNetLoss],
+        [DataSource],
+        [WeightedYieldData],
+        [MarketSegment],
+        [AgreementID],
+        [KeyVendor]
+    )
+    SELECT 
+        CONVERT(DATE, NULLIF(CAST(lease.LeaseSignDate AS VARCHAR), '0'), 112),
+        lcust.custname,
+        CASE 
+            WHEN lease.leasecompanynum = '04' OR lease.leasenum LIKE 'WC%' 
+            THEN 'Working Capital' 
+            ELSE 'Equipment' 
+        END,
+        lcust.custstate,
+        lfund.fundsourcename,
+        lp.brokername,
+        TRY_CONVERT(DECIMAL(18,2), lp.brokerfee),
+        TRY_CONVERT(DECIMAL(18,2), lease.leaseequipcost - ISNULL(open_invoice.histamount, 0)),
+        m.NAICSINDUSTRYDESC,
+        m.INDUSTRYCATEGORY,
+        m.EXTERNALNAICSCATEGORY,
+        m.NAICSINDUSTRY,
+        m.EQUIPMENTTYPE,
+        m.EQUIPCATEGORYDESCRIPTION,
+        CASE WHEN m.Description = '' THEN m.equipmentdescription ELSE m.description END,
+        lease.leaseterm,
+        TRY_CONVERT(DECIMAL(18,2), lease.LeaseResidual),
+        m.credittib,
+        TRY_CONVERT(DECIMAL(10,2), m.AVERAGEFICO),
+        m.CORPONLY,
+        m.TIER,
+        sm.AFG2modeltier,
+        opp.tf_creditanalystidname,
+        m.SALESREP,
+        TRY_CONVERT(DECIMAL(18,2), lease.LeaseTotalPmt),
+        m.PAYMENTFREQUENCY,
+        TRY_CONVERT(DECIMAL(18,2), lease.LeaseResidual),
+        TRY_CONVERT(DECIMAL(18,2), lease.LeaseBookValue),
+        TRY_CONVERT(DECIMAL(18,2), lease.LeaseRecvBalance), 
+        CONVERT(DATE, NULLIF(CAST(lease.LeaseOldestRentDue AS VARCHAR), '0'), 112),
+        TRY_CONVERT(DECIMAL(10,6), lease.LeaseNewImplicit / 100.0),
+        TRY_CONVERT(DECIMAL(18,2), m.SECURITY_DEPOSIT),
+        TRY_CONVERT(DECIMAL(18,2), (lease.leaseequipcost * (lease.LeaseNewImplicit / 100.0))),
+        CONVERT(DATE, NULLIF(CAST(lease.LeaseMaturityDate AS VARCHAR), '0'), 112),
+        CONVERT(DATE, NULLIF(CAST(lease.LeaseTerminationDate AS VARCHAR), '0'), 112),
+        m.PAYMENT_TYPE,
+        CONVERT(DATE, NULLIF(CAST(lease.LeaseNextInvDue AS VARCHAR), '0'), 112),
+        TRY_CONVERT(DECIMAL(10,2), m.PAYNETMS),
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        TRY_CONVERT(DECIMAL(18,2), (lease.leaseequipcost * (lease.LeaseNewImplicit / 100.0))),
+        CASE 
+            WHEN lease.leaseequipcost < 250000 THEN 'Small'
+            WHEN lease.leaseequipcost >= 250000 AND lease.leaseequipcost <= 5000000 THEN 'Middle'
+            ELSE 'Large'
+        END,
+        m.LEASENO,
+        m.PRIMARYVENDOR
+    FROM LeaseDatabase lease
+    LEFT JOIN MasterDataTape m 
+           ON m.leaseno = lease.leasenum
+          AND lease.leaseCompanyNum = m.LPLUS_COMPANYNUM
+    LEFT JOIN PipelineDB.dbo.LatestPipeline lp 
+           ON lp.lplus_contractnum = m.leaseno
+    LEFT JOIN ScoreModel sm 
+           ON sm.lpleasenum = lease.leasenum
+    LEFT JOIN Opportunity opp 
+           ON opp.legacy_id = lease.leasenum
+    LEFT JOIN LeaseCustomerView lcust 
+           ON lcust.custcompanynum = lease.leasecompanynum
+          AND lcust.custidnum = lease.leasecustidnum
+    LEFT JOIN LeaseFundingSource lfund 
+           ON lfund.fundcompanynum = lease.leasecompanynum
+          AND lfund.fundsourceidnum = lease.leasebank
+    LEFT JOIN open_invoice 
+           ON open_invoice.HistLeaseNum = lease.LeaseNum
+    WHERE lease.leasecompanynum IN ('01', '04', '05')
+      AND lease.LeaseSignDate >= 20200101;
+END;
