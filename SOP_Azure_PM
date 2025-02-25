@@ -1,0 +1,39 @@
+
+
+Azure DevOps Project Management SOP
+1. Overview
+This Standard Operating Procedure (SOP) details the project management workflow in Azure DevOps. It ensures that all features, user stories, and tasks are created, updated, and tracked efficiently. The process guarantees consistent structure, clear documentation, and transparent communication with stakeholders.
+
+2. Work Item Hierarchy & Definitions
+2.1 Feature
+A Feature represents a high-level project or major deliverable.
+Each Feature should include multiple User Stories, which break down the work into smaller, more manageable components.
+2.2 User Story
+A User Story is a sub-project under a Feature, usually designed to be completed within a sprint (flexibility may apply based on business needs and schedule).
+Structure & Requirements:
+Title: A concise statement of the project’s end goal (e.g., “Automate Quarterly Reporting in Analytics Tool”).
+Description: A complete explanation of the original request, detailing scope, objectives, and critical information.
+Deliverable: A one-sentence summary of the final expected outcome.
+Tags: If relevant to specific stakeholders (e.g., “Finance Team,” “Technical Leads”), add an appropriate tag (e.g., “Stakeholder Review”).
+2.3 Task
+A Task is an action item required to complete a User Story.
+Tasks are intended to be small, actionable pieces of work that can be completed within a short time frame.
+3. Work Item Management & Updates
+3.1 Creating & Managing User Stories
+Ensure each User Story has a clear description, detailing the original request.
+Define the expected deliverable in a concise manner within the designated section.
+Assign each User Story to its proper Feature and Iteration (Sprint) to align with the development timeline.
+3.2 Updating Work Items
+User Story Updates:
+Provide an updated comment every 1–2 days, even if no significant progress has been made.
+Include current status, any blockers, and next steps.
+Task Progress:
+Mark tasks as “In Progress” when work begins and “Done” upon completion.
+Use comments to document any issues or discuss any blockers.
+4. Stakeholder Visibility
+Any User Story relevant to stakeholder discussions should have the “Stakeholder Review” (or equivalent) tag.
+Verify that User Stories tagged for stakeholders are consistently updated and have clear status indicators prior to meetings or reviews.
+5. Compliance & Review
+Team leads should routinely review work items to confirm adherence to this SOP.
+If a User Story lacks updates for more than two days, the assignee should be contacted for a follow-up.
+Regular audits must be carried out to confirm the proper use of tags, well-defined descriptions, and clearly stated deliverables.
