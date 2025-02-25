@@ -1,0 +1,113 @@
+-- Load raw data into a staging table, transform it, and move to a target table in a data warehouse.
+
+USE [ETLStageDB];
+GO
+
+BEGIN TRY
+    BEGIN TRAN;
+
+    -- Truncate staging table
+    TRUNCATE TABLE [dbo].[Staging_Clients];
+
+    -- Extract from source database and load into staging
+    INSERT INTO [dbo].[Staging_Clients]
+    (
+          [ClientID]
+        , [ClientName]
+        , [RegistrationDate]
+        , [Region]
+        , [AnnualRevenue]
+        , [LastUpdateTimestamp]
+    )
+    SELECT 
+          [ClientID]
+        , [Name] AS [ClientName]
+        , [CreatedOn] AS [RegistrationDate]
+        , [State] AS [Region]
+        , [Revenue] AS [AnnualRevenue]
+        , GETDATE() AS [LastUpdateTimestamp]
+    FROM [SourceDB].[dbo].[Clients]
+    WHERE [IsActive] = 1;
+
+    -- Transform data within staging (example transformation: standardize region codes)
+    UPDATE stg
+    SET stg.[Region] = UPPER(stg.[Region])
+    FROM [dbo].[Staging_Clients] stg;
+
+    COMMIT TRAN;
+END TRY
+BEGIN CATCH
+    IF @@TRANCOUNT > 0
+        ROLLBACK TRAN;
+
+    THROW;
+END CATCH;
+GO
+
+USE [DataWarehouse];
+GO
+
+BEGIN TRY
+    BEGIN TRAN;
+
+    -- Merge staging data into target dimension table
+    MERGE [dbo].[DimClients] AS tgt
+    USING (
+        SELECT
+              [ClientID]
+            , [ClientName]
+            , [RegistrationDate]
+            , [Region]
+            , [AnnualRevenue]
+            , [LastUpdateTimestamp]
+        FROM [ETLStageDB].[dbo].[Staging_Clients]
+    ) AS src
+    ON (tgt.[ClientID] = src.[ClientID])
+
+    WHEN MATCHED THEN 
+        UPDATE SET
+              tgt.[ClientName] = src.[ClientName]
+            , tgt.[RegistrationDate] = src.[RegistrationDate]
+            , tgt.[Region] = src.[Region]
+            , tgt.[AnnualRevenue] = src.[AnnualRevenue]
+            , tgt.[LastUpdateTimestamp] = src.[LastUpdateTimestamp]
+
+    WHEN NOT MATCHED THEN
+        INSERT (
+              [ClientID]
+            , [ClientName]
+            , [RegistrationDate]
+            , [Region]
+            , [AnnualRevenue]
+            , [LastUpdateTimestamp]
+        )
+        VALUES (
+              src.[ClientID]
+            , src.[ClientName]
+            , src.[RegistrationDate]
+            , src.[Region]
+            , src.[AnnualRevenue]
+            , src.[LastUpdateTimestamp]
+        );
+
+    -- Log the ETL run
+    INSERT INTO [dbo].[ETL_Process_Log]
+    (
+          [ProcessName]
+        , [ExecutionDate]
+        , [RowsProcessed]
+    )
+    SELECT 
+          'Clients Load'
+        , GETDATE()
+        , @@ROWCOUNT;
+
+    COMMIT TRAN;
+END TRY
+BEGIN CATCH
+    IF @@TRANCOUNT > 0
+        ROLLBACK TRAN;
+
+    THROW;
+END CATCH;
+GO
