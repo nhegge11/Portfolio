@@ -1,0 +1,43 @@
+DECLARE @StartDate DATE = '2024-09-01';
+DECLARE @EndDate DATE = '2024-12-31';
+
+-- Execute the query with the date parameters
+WITH StageCounts AS (
+    SELECT 
+        SALES_REP,
+        CURRENT_STAGE,
+        COUNT(*) AS StageCount
+    FROM 
+        [---------].[dbo].[NEW_STAGEDATES]
+    WHERE 
+        STAGE_DATE BETWEEN @StartDate AND @EndDate
+    GROUP BY 
+        SALES_REP,
+        CURRENT_STAGE
+)
+SELECT 
+    SALES_REP,
+    ISNULL([Approved], 0) AS Approved,
+    ISNULL([Booked], 0) AS Booked,
+    ISNULL([Credit Processed], 0) AS Credit_Processed,
+    ISNULL([Documents Received], 0) AS Documents_Received,
+    ISNULL([Documents Sent], 0) AS Documents_Sent,
+    ISNULL([Funded], 0) AS Funded,
+    ISNULL([Funding Review], 0) AS Funding_Review,
+    ISNULL([New App], 0) AS New_App,
+    ISNULL([Pending], 0) AS Pending,
+    ISNULL([Pre Docs], 0) AS Pre_Docs,
+    ISNULL([Prefunded], 0) AS Prefunded,
+    ISNULL([Transaction Withdrawn], 0) AS Transaction_Withdrawn,
+    ISNULL([Under Credit Review], 0) AS Under_Credit_Review
+FROM 
+    StageCounts
+PIVOT 
+(
+    SUM(StageCount)
+    FOR CURRENT_STAGE IN ([Approved], [Booked], [Credit Processed], [Documents Received], [Documents Sent],
+                          [Funded], [Funding Review], [New App], [Pending], [Pre Docs],
+                          [Prefunded], [Transaction Withdrawn], [Under Credit Review])
+) AS pvt
+ORDER BY 
+    SALES_REP;
