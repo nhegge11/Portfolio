@@ -1,0 +1,244 @@
+USE [DataWarehouse]
+GO
+
+/****** Object:  View [dm].[vw_delinquency_rpt]    Script Date: 3/5/2025 11:53:07 AM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+ALTER view [dm].[vw_delinquency_rpt]
+as
+
+----# this is how you would query scf/csd to get historical information
+--with dw_hist as (
+--	select
+--		dcon.contract_id,
+--		contract_type = dcon.con_type_num,
+--		period_month_date = dt.cal_month_end_date,
+--		oldest_rent_due_date = fcon.con_oldest_rent_due_date,
+--		total_receivable_amt = fcon.con_total_receivable_amt
+--	from
+--		dm.contract_scf fcon
+--		inner join dm.contract_scd dcon
+--			on fcon.contract_scd_sk = dcon.contract_scd_sk
+
+--		cross join stg.vw_getdate asof
+--		inner join dm.date_dim dt
+--			on dt.calendar_date = dt.cal_month_end_date
+--			and dt.calendar_date between dateadd(month, -13, cast(asof.dt_est as date)) and cast(asof.dt_est as date)
+--			and dateadd(day, 3, dt.cal_month_end_date) between fcon.effective_date and isnull(fcon.expiration_date, cast(asof.dt_est as date))
+--			and dt.calendar_date > '4/1/2024'
+--	where
+--		fcon.con_termination_date is null
+--		and nullif(dcon.con_type_num,'') is not null
+--		and dcon.con_company_num in ('01', '05')
+with uni as (
+	select src = 'history', * from dm.delinquency_history_fact
+), 
+pastdue as (
+	select
+		*,
+		past_due_days = greatest(isnull(datediff(day, dqcy_oldest_rent_due_date, dqcy_period_month_date), 0), 0),
+		past_due_weeks = case when dqcy_contract_type = 'AFGWC' then greatest(isnull(datediff(week, dqcy_oldest_rent_due_date, dqcy_period_month_date), 0), 0) else null end,
+		past_due_months = case when dqcy_contract_type != 'AFGWC' then greatest(isnull(datediff(month, dqcy_oldest_rent_due_date, dqcy_period_month_date), 0), 0) else null end
+	from
+		uni
+), portfolio as (
+	select distinct
+		contact_type = con_type_num,
+		funding_source_num = con_funding_source_num,
+		portfolio = case 
+				when con_type_num  = 'AFGWC' then 'Working Capital'
+				else substring(con_type_desc, 1, greatest(charindex(' ', con_type_desc)-1,0))
+			end,
+		portfolio_plus_type = case
+				when con_type_num  = 'AFGWC' then 'Working Capital'
+				else concat(case con_type_num when 'AFGWC' then 'Working Capital' else substring(con_type_desc, 1, greatest(charindex(' ', con_type_desc)-1,0)) end, ' (', con_type_num, ')')
+			end,
+		afg_serviced_yn = con_afg_serviced_yn,
+		afg_held_yn = con_afg_held_yn
+	from
+		dm.contract_dim
+	where
+		con_afg_serviced_yn = 'Y'
+), bkt as (
+	select
+		src,
+		contract_sk,
+		contract_type = dqcy_contract_type,
+		funding_source_num = dqcy_funding_source_num,
+		afg_serviced_yn = isnull(prt.afg_serviced_yn, 'N'),
+		afg_held_yn = isnull(prt.afg_held_yn, 'N'),
+		
+		--Change added for AFGWC fix
+		portfolio = prt.portfolio,
+        portfolio_plus_type = prt.portfolio_plus_type,
+		--portfolio = ISNULL(prt.portfolio, 'Renewal'),
+        --portfolio_plus_type = ISNULL(prt.portfolio_plus_type, 'Renewal'),
+		
+		period_month_date = dqcy_period_month_date,
+		dqcy_oldest_rent_due_date,
+
+		due_total_amt = dqcy_total_receivable_amt,
+		due_current_amt = case when past_due_days = 0 then dqcy_total_receivable_amt else null end,
+		due_current_cnt = case when past_due_days = 0 then 1 else null end,
+		
+		due_cycle_1_amt = case when past_due_days > 0 and isnull(past_due_weeks, past_due_months) = 0 then dqcy_total_receivable_amt else null end,
+		due_cycle_2_amt = case when isnull(past_due_weeks, past_due_months) = 1 then dqcy_total_receivable_amt else null end,
+		due_cycle_3_amt = case when isnull(past_due_weeks, past_due_months) = 2 then dqcy_total_receivable_amt else null end,
+		due_cycle_4_amt = case when isnull(past_due_weeks, past_due_months) = 3 then dqcy_total_receivable_amt else null end,
+		due_cycle_5_amt = case when isnull(past_due_weeks, past_due_months) = 4 then dqcy_total_receivable_amt else null end,
+		due_cycle_6_amt = case when isnull(past_due_weeks, past_due_months) = 5 then dqcy_total_receivable_amt else null end,
+		
+		due_cycle_2_plus_amt = case when isnull(past_due_weeks, past_due_months) >= 1 then dqcy_total_receivable_amt else null end,
+		due_cycle_4_plus_amt = case when isnull(past_due_weeks, past_due_months) >= 3 then dqcy_total_receivable_amt else null end,
+		due_cycle_7_plus_amt = case when isnull(past_due_weeks, past_due_months) >= 6 then dqcy_total_receivable_amt else null end,
+		
+		due_cycle_1_cnt = case when past_due_days > 0 and isnull(past_due_weeks, past_due_months) = 0 then 1 else null end,
+		due_cycle_2_cnt = case when isnull(past_due_weeks, past_due_months) = 1 then 1 else null end,
+		due_cycle_3_cnt = case when isnull(past_due_weeks, past_due_months) = 2 then 1 else null end,
+		due_cycle_4_cnt = case when isnull(past_due_weeks, past_due_months) = 3 then 1 else null end,
+		due_cycle_5_cnt = case when isnull(past_due_weeks, past_due_months) = 4 then 1 else null end,
+		due_cycle_6_cnt = case when isnull(past_due_weeks, past_due_months) = 5 then 1 else null end,
+
+		due_cycle_2_plus_cnt = case when isnull(past_due_weeks, past_due_months) >= 1 then 1 else null end,
+		due_cycle_4_plus_cnt = case when isnull(past_due_weeks, past_due_months) >= 3 then 1 else null end,
+		due_cycle_7_plus_cnt = case when isnull(past_due_weeks, past_due_months) >= 6 then 1 else null end
+	from
+		pastdue pd
+		left join portfolio prt
+			on pd.dqcy_contract_type = prt.contact_type
+			and isnull(pd.dqcy_funding_source_num, -999) = isnull(prt.funding_source_num, -999)
+), detail as (
+
+	select
+		asof_dt = asof.dt,
+		src = bkt.src,
+		contract_id = dcon.contract_id,
+		company_num = dcon.con_company_num,
+		contract_num = dcon.con_contract_num,
+		afg_held_yn = bkt.afg_held_yn,
+		lease_type_npa_yn = case when bkt.contract_type like '%.np%' then 'Y' else 'N' end,
+		lease_type = bkt.contract_type,
+		funding_source_num = bkt.funding_source_num,
+		
+		--Change added fix AFGWC
+		portfolio = CASE 
+                WHEN bkt.contract_type = 'AFGWC' THEN 'Working Capital' 
+                ELSE ISNULL(bkt.portfolio, 'Renewal') 
+            END,
+		portfolio_plus_type = CASE 
+                          WHEN bkt.contract_type = 'AFGWC' THEN 'Working Capital' 
+                          ELSE ISNULL(bkt.portfolio_plus_type, 'Renewal') 
+                      END,
+       -- portfolio = bkt.portfolio,
+        --portfolio_plus_type = bkt.portfolio_plus_type,
+	
+		period_month_date = bkt.period_month_date,
+		period_month_abbr = dt.month_abbr,
+		period_year = dt.cal_year_num,
+
+		sales_rep = dcnt_rep.cont_full_name,
+		credit_analyst = dcnt_ana.cont_full_name,
+		broker = dbrk.brok_name,
+		referral_source = dcon.app_referral_account,
+		years_in_business = fcon.app_approved_tib_years,
+		internal_credit_tier = dcon.app_internal_tier,
+		calculated_credit_tier = dcon.app_calc_tier,
+		fico = fcon.app_avg_fico,
+		start_date = fcon.con_start_date,
+		paynet_score = fcon.app_paynet_score,
+		deal_type = dcon.app_deal_type,
+		end_of_term_option = dcon.con_purchase_option,
+		app_lease_path_link = dcon.app_lease_path_link,
+		oldest_rent_due_date = bkt.dqcy_oldest_rent_due_date,
+		vendor = dvnd.vend_name,
+		customer_num = dcst.cust_num,
+		customer_name = dcst.cust_name,
+		customer_state = dcst.cust_state,
+		naics_industry_category = dcst.cust_naics_category,
+		equip_category = deq.equip_category_desc,
+
+		implicit_yield = fcon.con_implicit_yield_pct,
+		implicit_yield_range_category = case when con_company_num = '04' then 'WC' else 'Lease' end,
+		implicit_yield_range = case when con_company_num != '04' then
+			case
+				when con_implicit_yield_pct >= .3 then '30.00% and higher'
+				when con_implicit_yield_pct between .28 and .3 then '28.00 - 29.99%'
+				when con_implicit_yield_pct between .26 and .28 then '26.00 - 27.99%'
+				when con_implicit_yield_pct between .24 and .26 then '24.00 - 25.99%'
+				when con_implicit_yield_pct between .22 and .24 then '22.00 - 23.99%'
+				when con_implicit_yield_pct between .20 and .22 then '20.00 - 21.99%'
+				when con_implicit_yield_pct between .18 and .2 then '18.00 - 19.99%'
+				when con_implicit_yield_pct between .16 and .18 then '16.00 - 17.99%'
+				when con_implicit_yield_pct between .14 and .16 then '14.00 - 15.99%'
+				when con_implicit_yield_pct between .12 and .14 then '12.00 - 13.99%'
+				when con_implicit_yield_pct between .1 and .12 then '10.00 - 11.99%'
+				when con_implicit_yield_pct between .08 and .1 then '8.00 - 9.99%'
+				when con_implicit_yield_pct between .06 and .08 then '6.00 - 7.99%'
+				when con_implicit_yield_pct between .04 and .06 then '4.00 - 5.99%'
+				when con_implicit_yield_pct between .02 and .04 then '2.00 - 3.99%'
+				when con_implicit_yield_pct < 0.2 then '1.99% and lower'
+			end else case
+				when con_implicit_yield_pct >= 1.5 then '150.00% and higher'
+				when con_implicit_yield_pct between 1.25 and 1.5 then '125.00 - 149.99%'
+				when con_implicit_yield_pct between 1 and 1.25 then '100.00 - 124.99%'
+				when con_implicit_yield_pct between .95 and .1 then '95.00 - 99.99%'
+				when con_implicit_yield_pct between .9 and .95 then '90.00 - 94.99%'
+				when con_implicit_yield_pct between .85 and .9 then '85.00 - 89.99%'
+				when con_implicit_yield_pct between .8 and .85 then '80.00 - 84.99%'
+				when con_implicit_yield_pct between .75 and .8 then '75.00 - 79.99%'
+				when con_implicit_yield_pct between .7 and .75 then '70.00 - 74.99%'
+				when con_implicit_yield_pct between .65 and .7 then '65.00 - 69.99%'
+				when con_implicit_yield_pct between .6 and .65 then '60.00 - 64.99%'
+				when con_implicit_yield_pct between .55 and .6 then '55.00 - 59.99%'
+				when con_implicit_yield_pct between .5 and .55 then '50.00 - 54.99%'
+				when con_implicit_yield_pct between .45 and .5 then '45.00 - 49.99%'
+				when con_implicit_yield_pct between .4 and .45 then '40.00 - 44.99%'
+				when con_implicit_yield_pct between .35 and .4 then '35.00 - 39.99%'
+				when con_implicit_yield_pct between .3 and .35 then '30.00 - 34.99%'
+				when con_implicit_yield_pct between .25 and .3 then '25.00 - 29.99%'
+				when con_implicit_yield_pct between .2 and .25 then '20.00 - 24.99%'
+				when con_implicit_yield_pct between .15 and .2 then '15.00 - 19.99%'
+				when con_implicit_yield_pct between .1 and .15 then '10.00 - 14.99%'
+				when con_implicit_yield_pct between .05 and .1 then '5.00 - 9.99%'
+				when con_implicit_yield_pct < 0.5 then '4.99% and lower'
+			end
+		end,
+
+		bkt.due_total_amt, bkt.due_current_amt, bkt.due_current_cnt, bkt.due_cycle_1_amt,bkt.due_cycle_2_amt,bkt.due_cycle_3_amt,bkt.due_cycle_4_amt,bkt.due_cycle_5_amt,bkt.due_cycle_6_amt,bkt.due_cycle_2_plus_amt,bkt.due_cycle_4_plus_amt,bkt.due_cycle_7_plus_amt,
+		bkt.due_cycle_1_cnt,bkt.due_cycle_2_cnt,bkt.due_cycle_3_cnt,bkt.due_cycle_4_cnt,bkt.due_cycle_5_cnt,bkt.due_cycle_6_cnt,bkt.due_cycle_2_plus_cnt,bkt.due_cycle_4_plus_cnt,bkt.due_cycle_7_plus_cnt
+	from
+		bkt
+		inner join dm.contract_dim dcon
+			on bkt.contract_sk = dcon.contract_sk
+		inner join dm.contract_fact fcon
+			on dcon.contract_sk = fcon.contract_sk
+		inner join dm.contact_dim dcnt_rep
+			on fcon.sales_rep_contact_sk = dcnt_rep.contact_sk
+		inner join dm.contact_dim dcnt_ana
+			on fcon.credit_analyst_contact_sk = dcnt_ana.contact_sk
+		left join dm.broker_dim dbrk
+			on fcon.broker_sk = dbrk.broker_sk
+		inner join dm.vendor_dim dvnd
+			on fcon.primary_vendor_sk = dvnd.vendor_sk
+		inner join dm.customer_dim dcst
+			on fcon.con_customer_sk = dcst.customer_sk
+		inner join dm.equipment_dim deq
+			on fcon.primary_equipment_sk = deq.equipment_sk
+		inner join dm.date_dim dt
+			on bkt.period_month_date = dt.calendar_date
+		cross join stg.vw_getdate asof
+	where
+		datediff(month, bkt.period_month_date, asof.dt) < 13
+
+)
+select * from detail
+GO
+
+
